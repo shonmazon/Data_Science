@@ -15,7 +15,9 @@ It renders directly on GitHub with all outputs and figures included.
 ## Dataset
 
 `Steam_2024_bestRevenue_1500.csv` — the 1,500 highest-revenue games released on
-Steam during 2024, obtained from Kaggle.
+Steam during 2024, obtained from the Kaggle dataset
+[*Top 1500 Games on Steam by Revenue (09-09-2024)*](https://www.kaggle.com/datasets/alicemtopcu/top-1500-games-on-steam-by-revenue-09-09-2024)
+published by the user `alicemtopcu`.
 
 | Property | Value |
 |---|---|
@@ -23,7 +25,7 @@ Steam during 2024, obtained from Kaggle.
 | Columns | 11 |
 | Size | 176.5 KB |
 | Release dates covered | 2024-01-01 to 2024-09-06 |
-| Extracted (from file metadata) | 2024-09-11 |
+| Extraction date | 2024-09-09 (stated by the source, corroborated by the file's timestamp) |
 
 The dataset mixes numeric (`copiesSold`, `price`, `revenue`, `avgPlaytime`,
 `reviewScore`), temporal (`releaseDate`) and categorical (`publisherClass`,
