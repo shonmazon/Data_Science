@@ -8,6 +8,8 @@ than no feature at all.
 
 import pandas as pd
 
+from .data_loading import split_entity_list
+
 
 def add_engineered_features(dataframe: pd.DataFrame) -> pd.DataFrame:
     """Derive the analytical features used in section 9.
@@ -44,9 +46,14 @@ def add_engineered_features(dataframe: pd.DataFrame) -> pd.DataFrame:
     engineered["releaseWeekday"] = engineered["releaseDate"].dt.day_name()
     engineered["isWeekendRelease"] = engineered["releaseDate"].dt.dayofweek >= 5
 
-    publisher_counts = engineered["publishers"].value_counts()
-    engineered["publisherReleaseCount"] = (
-        engineered["publishers"].map(publisher_counts).fillna(1).astype(int)
+    # Counting the stored strings would repeat the mistake section 3.2 warned
+    # about, since "Aspyr,Crystal Dynamics" is not the same category as "Aspyr".
+    # Companies are counted individually, and a title takes the count of the
+    # most prolific publisher attached to it.
+    publisher_lists = engineered["publishers"].apply(split_entity_list)
+    company_counts = publisher_lists.explode().dropna().value_counts()
+    engineered["publisherReleaseCount"] = publisher_lists.apply(
+        lambda companies: max((company_counts[name] for name in companies), default=1)
     )
 
     return engineered

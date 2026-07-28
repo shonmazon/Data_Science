@@ -5,7 +5,6 @@ masks rather than one function with a mode argument, because the point of
 section 5.1 is to compare what the three methods disagree about.
 """
 
-import numpy as np
 import pandas as pd
 from scipy.stats import median_abs_deviation
 
