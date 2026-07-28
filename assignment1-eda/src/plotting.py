@@ -1,0 +1,347 @@
+"""Chart styling and figure builders.
+
+All figures are produced here rather than inline in the notebook, so that every
+chart shares one visual language and no styling decision is repeated. Colours
+come from a fixed, pre-validated categorical palette and are assigned to
+entities in a fixed order, never cycled by rank.
+"""
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib.colors import LinearSegmentedColormap
+
+# Categorical slots, in fixed assignment order. Only the first three are used
+# for any chart where every pair of colours must be distinguishable at once
+# (scatter, pairplot); that three-slot set is validated for all pairs under
+# colour-vision deficiency.
+CATEGORICAL_COLOURS = ["#2a78d6", "#eb6834", "#1baf7a"]
+
+# Single hue for one-series charts, and the two poles of the diverging scale.
+PRIMARY_COLOUR = "#2a78d6"
+NEUTRAL_MIDPOINT = "#e8e8e6"
+DIVERGING_POLES = ("#2a78d6", "#eb6834")
+
+INK_PRIMARY = "#0b0b0b"
+INK_SECONDARY = "#52514e"
+GRID_COLOUR = "#dcdcd8"
+
+# Publisher classes in ascending order of studio scale. Hobbyist is folded into
+# Indie for grouped charts, as argued in section 5.2: a single observation
+# cannot support a category of its own.
+PUBLISHER_CLASS_ORDER = ["Indie", "AA", "AAA"]
+
+SEQUENTIAL_COLOURMAP = LinearSegmentedColormap.from_list(
+    "house_sequential", ["#f5f8fd", PRIMARY_COLOUR]
+)
+DIVERGING_COLOURMAP = LinearSegmentedColormap.from_list(
+    "house_diverging", [DIVERGING_POLES[0], NEUTRAL_MIDPOINT, DIVERGING_POLES[1]]
+)
+
+
+def apply_house_style() -> None:
+    """Set the shared matplotlib defaults: thin marks and a recessive grid."""
+    mpl.rcParams.update(
+        {
+            "figure.dpi": 110,
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
+            "axes.edgecolor": GRID_COLOUR,
+            "axes.labelcolor": INK_SECONDARY,
+            "axes.titlecolor": INK_PRIMARY,
+            "axes.titlesize": 12,
+            "axes.titleweight": "semibold",
+            "axes.titlepad": 12,
+            "axes.labelsize": 10,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "axes.grid": True,
+            "grid.color": GRID_COLOUR,
+            "grid.linewidth": 0.6,
+            "grid.linestyle": "-",
+            "axes.axisbelow": True,
+            "xtick.color": INK_SECONDARY,
+            "ytick.color": INK_SECONDARY,
+            "xtick.labelsize": 9,
+            "ytick.labelsize": 9,
+            "legend.frameon": False,
+            "legend.fontsize": 9,
+            "lines.linewidth": 2.0,
+            "font.size": 10,
+        }
+    )
+
+
+def _label_thousands(value: float, _position: int) -> str:
+    """Format an axis tick as a compact currency-free magnitude."""
+    for threshold, suffix in [(1e9, "B"), (1e6, "M"), (1e3, "K")]:
+        if abs(value) >= threshold:
+            return f"{value / threshold:.0f}{suffix}"
+    return f"{value:.0f}"
+
+
+def _class_palette(categories: list[str]) -> dict[str, str]:
+    """Map category names to colour slots in fixed order."""
+    return dict(zip(categories, CATEGORICAL_COLOURS))
+
+
+def plot_revenue_distribution(games: pd.DataFrame) -> plt.Figure:
+    """Histogram of revenue on the raw and logarithmic scale, side by side."""
+    figure, axes = plt.subplots(1, 2, figsize=(11, 4))
+
+    axes[0].hist(games["revenue"], bins=60, color=PRIMARY_COLOUR)
+    axes[0].set_title("Revenue is unreadable on a linear scale")
+    axes[0].set_xlabel("Revenue (USD)")
+    axes[0].set_ylabel("Number of games")
+    axes[0].xaxis.set_major_formatter(mpl.ticker.FuncFormatter(_label_thousands))
+
+    axes[1].hist(np.log10(games["revenue"]), bins=60, color=PRIMARY_COLOUR)
+    axes[1].set_title("On a log scale its shape becomes readable")
+    axes[1].set_xlabel("log$_{10}$ revenue (USD)")
+    axes[1].set_ylabel("Number of games")
+
+    figure.suptitle(
+        "Distribution of game revenue, 1,500 top-earning Steam titles of 2024",
+        fontsize=13,
+        fontweight="semibold",
+        y=1.04,
+    )
+    figure.tight_layout()
+    return figure
+
+
+def plot_copies_versus_revenue(games: pd.DataFrame) -> plt.Figure:
+    """Scatter of copies sold against revenue, on log axes, split by publisher class."""
+    figure, axis = plt.subplots(figsize=(8, 5.5))
+    palette = _class_palette(PUBLISHER_CLASS_ORDER)
+
+    for publisher_class in PUBLISHER_CLASS_ORDER:
+        subset = games[games["plotClass"] == publisher_class]
+        axis.scatter(
+            subset["copiesSold"],
+            subset["revenue"],
+            s=18,
+            alpha=0.65,
+            color=palette[publisher_class],
+            edgecolor="white",
+            linewidth=0.4,
+            label=f"{publisher_class} (n={len(subset):,})",
+        )
+
+    axis.set_xscale("log")
+    axis.set_yscale("log")
+    axis.set_xlabel("Copies sold (log scale)")
+    axis.set_ylabel("Revenue in USD (log scale)")
+    axis.set_title("Copies sold against revenue, by publisher class")
+    axis.legend(title="Publisher class", loc="upper left")
+    figure.tight_layout()
+    return figure
+
+
+def plot_median_revenue_by_class(games: pd.DataFrame) -> plt.Figure:
+    """Bar chart of median revenue per publisher class, with direct labels."""
+    medians = (
+        games.groupby("plotClass", observed=True)["revenue"]
+        .median()
+        .reindex(PUBLISHER_CLASS_ORDER)
+    )
+
+    figure, axis = plt.subplots(figsize=(7, 4.2))
+    bars = axis.bar(medians.index, medians.to_numpy(), color=PRIMARY_COLOUR, width=0.55)
+
+    for bar, value in zip(bars, medians.to_numpy()):
+        axis.text(
+            bar.get_x() + bar.get_width() / 2,
+            value,
+            f"${value:,.0f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            color=INK_SECONDARY,
+        )
+
+    axis.set_xlabel("Publisher class")
+    axis.set_ylabel("Median revenue (USD)")
+    axis.set_title("Median revenue rises tenfold from Indie to AAA")
+    axis.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(_label_thousands))
+    axis.margins(y=0.15)
+    figure.tight_layout()
+    return figure
+
+
+def plot_revenue_box_by_class(games: pd.DataFrame) -> plt.Figure:
+    """Box plot of log revenue by publisher class."""
+    figure, axis = plt.subplots(figsize=(7.5, 4.5))
+    sns.boxplot(
+        data=games,
+        x="plotClass",
+        y="logRevenue",
+        order=PUBLISHER_CLASS_ORDER,
+        color=PRIMARY_COLOUR,
+        width=0.45,
+        fliersize=2.5,
+        linewidth=1.1,
+        ax=axis,
+    )
+    axis.set_xlabel("Publisher class")
+    axis.set_ylabel("log$_{10}$ revenue (USD)")
+    axis.set_title("Revenue spread within each publisher class")
+    figure.tight_layout()
+    return figure
+
+
+def plot_playtime_violin_by_price(games: pd.DataFrame) -> plt.Figure:
+    """Violin plot of playtime across price bands."""
+    figure, axis = plt.subplots(figsize=(9, 4.8))
+    sns.violinplot(
+        data=games.dropna(subset=["avgPlaytime", "priceBand"]),
+        x="priceBand",
+        y="avgPlaytime",
+        color=PRIMARY_COLOUR,
+        cut=0,
+        linewidth=1.0,
+        ax=axis,
+    )
+    axis.set_yscale("log")
+    axis.set_xlabel("Price band")
+    axis.set_ylabel("Average playtime in hours (log scale)")
+    axis.set_title("Costlier games are played for longer, with free-to-play the exception")
+    figure.tight_layout()
+    return figure
+
+
+def plot_share_comparison_pies(games: pd.DataFrame) -> plt.Figure:
+    """Two pies contrasting each class's share of games with its share of revenue."""
+    grouped = games.groupby("plotClass", observed=True)
+    share_of_games = grouped.size().reindex(PUBLISHER_CLASS_ORDER)
+    share_of_revenue = grouped["revenue"].sum().reindex(PUBLISHER_CLASS_ORDER)
+    colours = [_class_palette(PUBLISHER_CLASS_ORDER)[name] for name in PUBLISHER_CLASS_ORDER]
+
+    figure, axes = plt.subplots(1, 2, figsize=(10, 4.6))
+    for axis, values, title in [
+        (axes[0], share_of_games, "Share of games"),
+        (axes[1], share_of_revenue, "Share of revenue"),
+    ]:
+        axis.pie(
+            values.to_numpy(),
+            labels=values.index,
+            colors=colours,
+            autopct="%1.1f%%",
+            startangle=90,
+            counterclock=False,
+            wedgeprops={"edgecolor": "white", "linewidth": 2},
+            textprops={"color": INK_PRIMARY, "fontsize": 10},
+        )
+        axis.set_title(title)
+        axis.grid(False)
+
+    figure.suptitle(
+        "Indie studios make most of the games and take the smallest share of the money",
+        fontsize=13,
+        fontweight="semibold",
+        y=1.02,
+    )
+    figure.tight_layout()
+    return figure
+
+
+def plot_numeric_pairplot(games: pd.DataFrame) -> sns.PairGrid:
+    """Pairplot of the log-scaled numeric variables, split by publisher class."""
+    columns = ["logRevenue", "logCopiesSold", "price", "avgPlaytime", "reviewScore"]
+    grid = sns.pairplot(
+        games.dropna(subset=columns + ["plotClass"]),
+        vars=columns,
+        hue="plotClass",
+        hue_order=PUBLISHER_CLASS_ORDER,
+        palette=CATEGORICAL_COLOURS,
+        corner=True,
+        plot_kws={"s": 10, "alpha": 0.5, "linewidth": 0},
+        diag_kws={"common_norm": False},
+        height=1.9,
+    )
+    grid.figure.suptitle(
+        "Pairwise relationships between the numeric variables", y=1.01, fontsize=13,
+        fontweight="semibold",
+    )
+    grid.legend.set_title("Publisher class")
+    return grid
+
+
+def plot_correlation_heatmap(matrix: pd.DataFrame, title: str) -> plt.Figure:
+    """Heatmap of a correlation matrix on a diverging scale centred at zero."""
+    figure, axis = plt.subplots(figsize=(7.2, 5.8))
+    sns.heatmap(
+        matrix,
+        annot=True,
+        fmt=".2f",
+        cmap=DIVERGING_COLOURMAP,
+        vmin=-1,
+        vmax=1,
+        center=0,
+        square=True,
+        linewidths=2,
+        linecolor="white",
+        cbar_kws={"label": "Correlation coefficient", "shrink": 0.8},
+        annot_kws={"fontsize": 8.5},
+        ax=axis,
+    )
+    axis.set_title(title)
+    axis.grid(False)
+    figure.tight_layout()
+    return figure
+
+
+def plot_association_heatmap(matrix: pd.DataFrame, title: str) -> plt.Figure:
+    """Heatmap of Cramér's V on a single-hue sequential scale from 0 to 1."""
+    figure, axis = plt.subplots(figsize=(7.6, 6.2))
+    sns.heatmap(
+        matrix,
+        annot=True,
+        fmt=".2f",
+        cmap=SEQUENTIAL_COLOURMAP,
+        vmin=0,
+        vmax=1,
+        square=True,
+        linewidths=2,
+        linecolor="white",
+        cbar_kws={"label": "Cramér's V", "shrink": 0.8},
+        annot_kws={"fontsize": 8.5},
+        ax=axis,
+    )
+    axis.set_title(title)
+    axis.grid(False)
+    figure.tight_layout()
+    return figure
+
+
+def plot_monthly_revenue_trend(games: pd.DataFrame) -> plt.Figure:
+    """Median revenue and median days on sale by release month, as small multiples."""
+    monthly = games.groupby(games["releaseDate"].dt.to_period("M"), observed=True).agg(
+        median_revenue=("revenue", "median"),
+        median_days=("daysOnSale", "median"),
+        games=("revenue", "size"),
+    )
+    months = monthly.index.astype(str)
+
+    figure, axes = plt.subplots(2, 1, figsize=(9, 6), sharex=True)
+
+    axes[0].bar(months, monthly["median_revenue"], color=PRIMARY_COLOUR, width=0.6)
+    axes[0].set_ylabel("Median revenue (USD)")
+    axes[0].set_title("Median revenue barely moves across release months")
+    axes[0].yaxis.set_major_formatter(mpl.ticker.FuncFormatter(_label_thousands))
+
+    axes[1].bar(months, monthly["median_days"], color=DIVERGING_POLES[1], width=0.6)
+    axes[1].set_ylabel("Median days on sale")
+    axes[1].set_xlabel("Release month")
+    axes[1].set_title("...even though time on sale collapses from 236 days to 7")
+
+    figure.suptitle(
+        "The exposure effect is absent, which is itself evidence of selection",
+        fontsize=13,
+        fontweight="semibold",
+        y=1.0,
+    )
+    figure.tight_layout()
+    return figure
