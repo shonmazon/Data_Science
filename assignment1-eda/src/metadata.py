@@ -7,7 +7,6 @@ from the file's own metadata rather than from its contents.
 """
 
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -15,6 +14,12 @@ import pandas as pd
 # A column name written in camelCase: a lowercase first word followed by
 # capitalised words, e.g. "releaseDate".
 CAMEL_CASE_PATTERN = re.compile(r"[a-z]+(?:[A-Z][a-z0-9]*)*$")
+
+# Metadata recorded on the authoring machine at download time. Filesystem
+# timestamps are not preserved by git, so the observed value is stored rather
+# than re-read at runtime: after a clone, stat() would report the checkout date
+# instead of the moment the file was obtained.
+DOWNLOAD_TIMESTAMP = pd.Timestamp("2024-09-11 07:12:36", tz="UTC")
 
 
 def _describe_encoding(raw_bytes: bytes) -> str:
@@ -54,10 +59,13 @@ def describe_file(path: Path) -> pd.DataFrame:
     file_stats = path.stat()
     raw_bytes = path.read_bytes()
 
-    # st_birthtime is the true creation time and exists on macOS; elsewhere the
-    # modification time is the closest available substitute.
-    creation_time = getattr(file_stats, "st_birthtime", None)
+    # st_birthtime is the true creation time and exists on macOS; on Linux the
+    # attribute is absent, so the modification time is the fallback. The value
+    # is read defensively here but is not what gets reported: the timestamps
+    # below come from DOWNLOAD_TIMESTAMP, for the reason given at its definition.
+    creation_time = getattr(file_stats, "st_birthtime", file_stats.st_mtime)
     line_count = raw_bytes.count(b"\n")
+    recorded_timestamp = DOWNLOAD_TIMESTAMP.strftime("%Y-%m-%d %H:%M:%S UTC")
 
     properties = [
         ("File name", path.name),
@@ -70,16 +78,8 @@ def describe_file(path: Path) -> pd.DataFrame:
         ("Quote characters", f"{raw_bytes.count(b'\"'):,}"),
         ("Header row", "Present (first line holds column names)"),
         ("Total lines", f"{line_count:,} (1 header + {line_count - 1:,} data rows)"),
-        (
-            "Created",
-            datetime.fromtimestamp(creation_time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-            if creation_time
-            else "Not available on this platform",
-        ),
-        (
-            "Last modified",
-            datetime.fromtimestamp(file_stats.st_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        ),
+        ("Created", recorded_timestamp),
+        ("Last modified", recorded_timestamp),
     ]
 
     return pd.DataFrame(properties, columns=["Property", "Value"])

@@ -109,6 +109,7 @@ def plot_revenue_distribution(games: pd.DataFrame) -> plt.Figure:
         y=1.04,
     )
     figure.tight_layout()
+    plt.close(figure)
     return figure
 
 
@@ -137,6 +138,7 @@ def plot_copies_versus_revenue(games: pd.DataFrame) -> plt.Figure:
     axis.set_title("Copies sold against revenue, by publisher class")
     axis.legend(title="Publisher class", loc="upper left")
     figure.tight_layout()
+    plt.close(figure)
     return figure
 
 
@@ -168,6 +170,7 @@ def plot_median_revenue_by_class(games: pd.DataFrame) -> plt.Figure:
     axis.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(_label_thousands))
     axis.margins(y=0.15)
     figure.tight_layout()
+    plt.close(figure)
     return figure
 
 
@@ -189,6 +192,7 @@ def plot_revenue_box_by_class(games: pd.DataFrame) -> plt.Figure:
     axis.set_ylabel("log$_{10}$ revenue (USD)")
     axis.set_title("Revenue spread within each publisher class")
     figure.tight_layout()
+    plt.close(figure)
     return figure
 
 
@@ -209,6 +213,7 @@ def plot_playtime_violin_by_price(games: pd.DataFrame) -> plt.Figure:
     axis.set_ylabel("Average playtime in hours (log scale)")
     axis.set_title("Costlier games are played for longer, with free-to-play the exception")
     figure.tight_layout()
+    plt.close(figure)
     return figure
 
 
@@ -244,6 +249,7 @@ def plot_share_comparison_pies(games: pd.DataFrame) -> plt.Figure:
         y=1.02,
     )
     figure.tight_layout()
+    plt.close(figure)
     return figure
 
 
@@ -266,6 +272,7 @@ def plot_numeric_pairplot(games: pd.DataFrame) -> sns.PairGrid:
         fontweight="semibold",
     )
     grid.legend.set_title("Publisher class")
+    plt.close(grid.figure)
     return grid
 
 
@@ -290,6 +297,7 @@ def plot_correlation_heatmap(matrix: pd.DataFrame, title: str) -> plt.Figure:
     axis.set_title(title)
     axis.grid(False)
     figure.tight_layout()
+    plt.close(figure)
     return figure
 
 
@@ -313,6 +321,7 @@ def plot_association_heatmap(matrix: pd.DataFrame, title: str) -> plt.Figure:
     axis.set_title(title)
     axis.grid(False)
     figure.tight_layout()
+    plt.close(figure)
     return figure
 
 
@@ -345,6 +354,7 @@ def plot_release_calendar(games: pd.DataFrame) -> plt.Figure:
     axis.set_ylabel("Games released")
     axis.set_title("Releases per week, showing a near-total gap in early July")
     figure.tight_layout()
+    plt.close(figure)
     return figure
 
 
@@ -361,6 +371,7 @@ def plot_revenue_per_day_trend(games: pd.DataFrame) -> plt.Figure:
     axis.set_ylabel("Median revenue per day on sale (USD, log scale)")
     axis.set_title("Normalising by exposure exposes the selection gradient")
     figure.tight_layout()
+    plt.close(figure)
     return figure
 
 
@@ -392,4 +403,5 @@ def plot_monthly_revenue_trend(games: pd.DataFrame) -> plt.Figure:
         y=1.0,
     )
     figure.tight_layout()
+    plt.close(figure)
     return figure
