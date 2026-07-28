@@ -316,6 +316,54 @@ def plot_association_heatmap(matrix: pd.DataFrame, title: str) -> plt.Figure:
     return figure
 
 
+def plot_release_calendar(games: pd.DataFrame) -> plt.Figure:
+    """Releases per ISO week, with the quietest week emphasised."""
+    weekly_counts = games.groupby(
+        games["releaseDate"].dt.isocalendar().week, observed=True
+    ).size()
+    quietest_week = weekly_counts.idxmin()
+
+    # Emphasis, not a value ramp: one bar is singled out because the narrative
+    # is about that week, and every other bar keeps the single series colour.
+    colours = [
+        DIVERGING_POLES[1] if week == quietest_week else PRIMARY_COLOUR
+        for week in weekly_counts.index
+    ]
+
+    figure, axis = plt.subplots(figsize=(10, 4))
+    axis.bar(weekly_counts.index, weekly_counts.to_numpy(), color=colours, width=0.75)
+    axis.annotate(
+        f"Week {quietest_week}: {weekly_counts.min()} releases",
+        xy=(quietest_week, weekly_counts.min()),
+        xytext=(quietest_week + 2, weekly_counts.max() * 1.1),
+        color=INK_SECONDARY,
+        fontsize=9,
+        arrowprops={"arrowstyle": "->", "color": INK_SECONDARY, "linewidth": 1},
+    )
+    axis.set_ylim(0, weekly_counts.max() * 1.3)
+    axis.set_xlabel("ISO week of 2024")
+    axis.set_ylabel("Games released")
+    axis.set_title("Releases per week, showing a near-total gap in early July")
+    figure.tight_layout()
+    return figure
+
+
+def plot_revenue_per_day_trend(games: pd.DataFrame) -> plt.Figure:
+    """Median revenue per day of exposure, by release month, on a log axis."""
+    monthly = games.groupby(
+        games["releaseDate"].dt.to_period("M"), observed=True
+    )["revenuePerDay"].median()
+
+    figure, axis = plt.subplots(figsize=(9, 4.2))
+    axis.bar(monthly.index.astype(str), monthly.to_numpy(), color=PRIMARY_COLOUR, width=0.6)
+    axis.set_yscale("log")
+    axis.set_xlabel("Release month")
+    axis.set_ylabel("Median revenue per day on sale (USD, log scale)")
+    axis.set_title("Normalising by exposure exposes the selection gradient")
+    figure.tight_layout()
+    return figure
+
+
 def plot_monthly_revenue_trend(games: pd.DataFrame) -> plt.Figure:
     """Median revenue and median days on sale by release month, as small multiples."""
     monthly = games.groupby(games["releaseDate"].dt.to_period("M"), observed=True).agg(
