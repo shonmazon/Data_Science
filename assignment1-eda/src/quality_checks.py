@@ -99,6 +99,40 @@ def detect_descending_blocks(series: pd.Series) -> pd.DataFrame:
     )
 
 
+def describe_index(
+    dataframe: pd.DataFrame, sort_candidates: list[str]
+) -> pd.DataFrame:
+    """Report what the row index is, and whether the rows are ordered by anything.
+
+    Args:
+        dataframe: The dataset, in its original row order.
+        sort_candidates: Columns the file might plausibly have been sorted by.
+
+    Returns:
+        A two-column table of properties and their observed values.
+    """
+    index = dataframe.index
+    properties = [
+        ("Index type", type(index).__name__),
+        ("Index range", f"{index.min()} to {index.max()}"),
+        ("Index is unique", "Yes" if index.is_unique else "No"),
+        ("Index carries meaning", "No — it is positional, assigned on load"),
+        ("Index is time-based", "No"),
+    ]
+
+    for column in sort_candidates:
+        values = dataframe[column]
+        if values.is_monotonic_increasing:
+            order = "Sorted ascending"
+        elif values.is_monotonic_decreasing:
+            order = "Sorted descending"
+        else:
+            order = "Not sorted"
+        properties.append((f"Rows ordered by {column}", order))
+
+    return pd.DataFrame(properties, columns=["Property", "Value"])
+
+
 def summarise_zero_values(
     dataframe: pd.DataFrame, columns: list[str]
 ) -> pd.DataFrame:
