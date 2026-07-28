@@ -1,0 +1,16 @@
+# Core data handling
+pandas==3.0.3
+numpy==2.5.1
+
+# Statistics: Cramer's V (chi2_contingency), MAD, correlation p-values, hypothesis tests
+scipy==1.18.0
+
+# Visualization
+matplotlib==3.11.0
+seaborn==0.13.2
+
+# Missing-data pattern visualization
+missingno==0.5.2
+
+# Notebook execution
+ipykernel==7.3.0
