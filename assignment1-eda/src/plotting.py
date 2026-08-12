@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.colors import LinearSegmentedColormap
+from scipy.stats import probplot
 
 # Categorical slots, in fixed assignment order. Only the first three are used
 # for any chart where every pair of colours must be distinguishable at once
@@ -589,6 +590,176 @@ def plot_release_calendar_heatmap(games: pd.DataFrame) -> plt.Figure:
     axis.set_ylabel("Release month")
     axis.set_title("Release counts by month and weekday")
     axis.grid(False)
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_revenue_qq(games: pd.DataFrame) -> plt.Figure:
+    """Normal probability plots of revenue before and after a log transform.
+
+    A Q-Q plot compares the observed quantiles against those of a normal
+    distribution: points on the diagonal mean the two agree. It tests directly
+    the claim made in section 5.1, that logarithms make revenue tractable
+    without making it normal.
+    """
+    figure, axes = plt.subplots(1, 2, figsize=(11, 4.3))
+
+    for axis, values, label in [
+        (axes[0], games["revenue"], "Revenue, raw scale"),
+        (axes[1], np.log10(games["revenue"]), "Revenue, log$_{10}$ scale"),
+    ]:
+        probplot(values.dropna(), dist="norm", plot=axis)
+        axis.get_lines()[0].set(marker="o", markersize=2.5, color=PRIMARY_COLOUR, alpha=0.5)
+        axis.get_lines()[1].set(color=DIVERGING_POLES[1], linewidth=1.4)
+        axis.set_title(label)
+        axis.set_xlabel("Theoretical normal quantiles")
+        axis.set_ylabel("Observed quantiles")
+
+    figure.suptitle(
+        "Normal probability plots: the log transform straightens most, but not all, of the curve",
+        fontsize=13,
+        fontweight="semibold",
+        y=1.03,
+    )
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_revenue_lorenz_curve(games: pd.DataFrame) -> plt.Figure:
+    """Lorenz curve of revenue, with the Gini coefficient.
+
+    Section 5 reports the concentration of revenue as a list of percentages.
+    The Lorenz curve shows the whole distribution of that concentration at
+    once: the further the curve sags below the diagonal, the more unequal the
+    share of revenue across games.
+    """
+    ordered = games["revenue"].sort_values().to_numpy()
+    cumulative_revenue = np.concatenate([[0.0], ordered.cumsum() / ordered.sum()])
+    cumulative_games = np.linspace(0.0, 1.0, len(cumulative_revenue))
+
+    # Gini is twice the area between the diagonal and the curve.
+    gini = 1 - 2 * np.trapezoid(cumulative_revenue, cumulative_games)
+
+    figure, axis = plt.subplots(figsize=(6.4, 6))
+    axis.plot([0, 1], [0, 1], color=INK_SECONDARY, linewidth=1.2, label="Perfect equality")
+    axis.plot(cumulative_games, cumulative_revenue, color=PRIMARY_COLOUR, linewidth=2.2,
+              label=f"Observed (Gini = {gini:.2f})")
+    axis.fill_between(cumulative_games, cumulative_revenue, cumulative_games,
+                      color=PRIMARY_COLOUR, alpha=0.10)
+
+    axis.set_xlim(0, 1)
+    axis.set_ylim(0, 1)
+    axis.set_xlabel("Cumulative share of games, poorest earning first")
+    axis.set_ylabel("Cumulative share of revenue")
+    axis.set_title("Lorenz curve of revenue across the 1,500 games")
+    axis.legend(loc="upper left")
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_copies_revenue_hexbin(games: pd.DataFrame) -> plt.Figure:
+    """Hexagonal density of copies sold against revenue.
+
+    The scatter plot of the same two variables draws 1,500 semi-transparent
+    points, which hides how much of the data sits in the dense core. Binning
+    the plane and colouring by count shows the concentration that overplotting
+    conceals, which is the same pair of variables seen a different way.
+    """
+    figure, axis = plt.subplots(figsize=(8, 5.4))
+    mesh = axis.hexbin(
+        np.log10(games["copiesSold"]),
+        np.log10(games["revenue"]),
+        gridsize=32,
+        cmap=SEQUENTIAL_COLOURMAP,
+        mincnt=1,
+        linewidths=0.2,
+        edgecolors="white",
+    )
+    colour_bar = figure.colorbar(mesh, ax=axis, shrink=0.85)
+    colour_bar.set_label("Games in bin")
+
+    axis.set_xlabel("log$_{10}$ copies sold")
+    axis.set_ylabel("log$_{10}$ revenue (USD)")
+    axis.set_title("Where the games actually sit, which the scatter plot obscures")
+    axis.grid(False)
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_class_composition_by_price(games: pd.DataFrame) -> plt.Figure:
+    """Stacked bars showing the publisher-class mix inside each price band.
+
+    Section 6.2 measures the association between class and price with Cramer's
+    V and a contingency table. Normalising each band to 100% shows the shape of
+    that association: which kind of studio occupies which part of the price
+    range.
+    """
+    composition = pd.crosstab(games["priceBand"], games["plotClass"], normalize="index") * 100
+    composition = composition.reindex(columns=PUBLISHER_CLASS_ORDER)
+
+    figure, axis = plt.subplots(figsize=(9, 4.8))
+    running_total = np.zeros(len(composition))
+    for publisher_class, colour in zip(PUBLISHER_CLASS_ORDER, CATEGORICAL_COLOURS):
+        values = composition[publisher_class].to_numpy()
+        axis.bar(
+            composition.index.astype(str),
+            values,
+            bottom=running_total,
+            color=colour,
+            width=0.62,
+            label=publisher_class,
+            edgecolor="white",
+            linewidth=2,
+        )
+        running_total += values
+
+    axis.set_ylim(0, 100)
+    axis.set_xlabel("Price band")
+    axis.set_ylabel("Share of games in the band (%)")
+    axis.set_title("Publisher class composition within each price band")
+    axis.legend(title="Publisher class", loc="upper left", bbox_to_anchor=(1.01, 1.0))
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_monthly_stability_lines(games: pd.DataFrame) -> plt.Figure:
+    """Line chart of four monthly indicators, each indexed to its January value.
+
+    Section 7 asks whether the analysis changes over time and answers with a
+    table of quarterly figures. Indexing each series to 100 at January puts four
+    quantities with different units on a single axis without distorting any of
+    them, so drift in any one of them would be immediately visible.
+    """
+    monthly = games.groupby(games["releaseDate"].dt.to_period("M"), observed=True).agg(
+        median_revenue=("revenue", "median"),
+        median_price=("price", "median"),
+        median_review=("reviewScore", "median"),
+        indie_share=("plotClass", lambda column: (column == "Indie").mean()),
+    )
+    indexed = monthly / monthly.iloc[0] * 100
+    months = monthly.index.astype(str)
+
+    series_labels = {
+        "median_revenue": "Median revenue",
+        "median_price": "Median price",
+        "median_review": "Median review score",
+        "indie_share": "Indie share of releases",
+    }
+
+    figure, axis = plt.subplots(figsize=(9.5, 4.8))
+    for (column, label), colour in zip(series_labels.items(), CATEGORICAL_COLOURS + ["#eda100"]):
+        axis.plot(months, indexed[column], color=colour, marker="o", markersize=4, label=label)
+
+    axis.axhline(100, color=INK_SECONDARY, linewidth=1.0)
+    axis.set_xlabel("Release month")
+    axis.set_ylabel("Value indexed to January = 100")
+    axis.set_title("Quality and composition hold flat; median revenue is noisier")
+    axis.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0))
     figure.tight_layout()
     plt.close(figure)
     return figure
