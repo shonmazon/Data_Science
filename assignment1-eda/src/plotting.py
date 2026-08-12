@@ -405,3 +405,190 @@ def plot_monthly_revenue_trend(games: pd.DataFrame) -> plt.Figure:
     figure.tight_layout()
     plt.close(figure)
     return figure
+
+
+def plot_review_score_distribution(raw_games: pd.DataFrame) -> plt.Figure:
+    """Histogram of the raw review scores, before the placeholders are removed.
+
+    Section 4.3 argues from a frequency table that a stored 0 is a placeholder
+    rather than a rating. The histogram shows the same evidence directly: a
+    spike at zero separated from the real distribution by an almost empty gap.
+    """
+    figure, axis = plt.subplots(figsize=(9, 4.4))
+
+    axis.hist(raw_games["reviewScore"], bins=range(0, 102, 2), color=PRIMARY_COLOUR)
+    axis.axvspan(1, 30, color=DIVERGING_POLES[1], alpha=0.12)
+    axis.annotate(
+        "99 games at exactly 0",
+        xy=(0, (raw_games["reviewScore"] == 0).sum()),
+        xytext=(14, (raw_games["reviewScore"] == 0).sum() * 0.92),
+        color=INK_SECONDARY,
+        fontsize=9,
+        arrowprops={"arrowstyle": "->", "color": INK_SECONDARY, "linewidth": 1},
+    )
+    axis.annotate(
+        "only 6 games score 1-30",
+        xy=(15, 6),
+        xytext=(33, (raw_games["reviewScore"] == 0).sum() * 0.55),
+        color=INK_SECONDARY,
+        fontsize=9,
+        arrowprops={"arrowstyle": "->", "color": INK_SECONDARY, "linewidth": 1},
+    )
+
+    axis.set_xlabel("Review score (percentage of positive reviews)")
+    axis.set_ylabel("Number of games")
+    axis.set_title("A spike at zero, separated from the real distribution by a gap")
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_numeric_spread(games: pd.DataFrame) -> plt.Figure:
+    """Box plots of every numeric variable, as small multiples.
+
+    Each variable keeps its own panel and its own axis, because their units and
+    magnitudes are not comparable. The three heavy-tailed variables are drawn on
+    a logarithmic scale, which is the only way their boxes remain visible.
+    """
+    panels = [
+        ("revenue", "Revenue (USD)", True),
+        ("copiesSold", "Copies sold", True),
+        ("avgPlaytime", "Average playtime (hours)", True),
+        ("price", "Price (USD)", False),
+        ("reviewScore", "Review score", False),
+    ]
+
+    figure, axes = plt.subplots(1, len(panels), figsize=(12, 4.2))
+    for axis, (column, label, use_log) in zip(axes, panels):
+        axis.boxplot(
+            games[column].dropna(),
+            widths=0.45,
+            patch_artist=True,
+            boxprops={"facecolor": PRIMARY_COLOUR, "edgecolor": INK_SECONDARY, "linewidth": 0.9},
+            medianprops={"color": "white", "linewidth": 1.4},
+            whiskerprops={"color": INK_SECONDARY, "linewidth": 0.9},
+            capprops={"color": INK_SECONDARY, "linewidth": 0.9},
+            flierprops={"marker": "o", "markersize": 2.5, "markerfacecolor": INK_SECONDARY,
+                        "markeredgecolor": "none", "alpha": 0.4},
+        )
+        if use_log:
+            axis.set_yscale("log")
+        axis.set_title(label, fontsize=10)
+        axis.set_xticks([])
+
+    figure.suptitle(
+        "Spread and outliers of each numeric variable, on independent axes",
+        fontsize=13,
+        fontweight="semibold",
+        y=1.03,
+    )
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_playtime_versus_revenue(games: pd.DataFrame) -> plt.Figure:
+    """Scatter of average playtime against revenue, both on logarithmic axes.
+
+    This is the pair where Pearson and Spearman disagree most sharply in section
+    6.1, and the plot shows why: the relationship is real but curved, so a
+    coefficient that assumes a straight line finds almost nothing.
+    """
+    plotted = games.dropna(subset=["avgPlaytime", "revenue"])
+
+    figure, axis = plt.subplots(figsize=(8, 5))
+    axis.scatter(
+        plotted["avgPlaytime"],
+        plotted["revenue"],
+        s=16,
+        alpha=0.5,
+        color=PRIMARY_COLOUR,
+        edgecolor="white",
+        linewidth=0.3,
+    )
+    axis.set_xscale("log")
+    axis.set_yscale("log")
+    axis.set_xlabel("Average playtime in hours (log scale)")
+    axis.set_ylabel("Revenue in USD (log scale)")
+    axis.set_title("Playtime against revenue: Pearson 0.08, Spearman 0.44")
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_revenue_by_row_order(games: pd.DataFrame, block_starts: list[int]) -> plt.Figure:
+    """Scatter of revenue against position in the file.
+
+    Section 7 establishes from a table that the file is four concatenated
+    sorted extracts. Plotting revenue against row number makes the four
+    descending runs, and the block of top earners stored last, visible at once.
+    """
+    figure, axis = plt.subplots(figsize=(10, 4.6))
+    axis.scatter(
+        games.index,
+        games["revenue"],
+        s=7,
+        alpha=0.55,
+        color=PRIMARY_COLOUR,
+        edgecolor="none",
+    )
+    axis.set_yscale("log")
+
+    for boundary in block_starts[1:]:
+        axis.axvline(boundary, color=DIVERGING_POLES[1], linewidth=1.1)
+
+    labels = ["A", "B", "C", "D"]
+    edges = block_starts + [len(games)]
+    for name, start, end in zip(labels, edges[:-1], edges[1:]):
+        axis.text(
+            (start + end) / 2,
+            games["revenue"].max() * 1.6,
+            name,
+            ha="center",
+            fontsize=10,
+            color=INK_SECONDARY,
+        )
+
+    axis.set_ylim(top=games["revenue"].max() * 4)
+    axis.set_xlabel("Row position in the file")
+    axis.set_ylabel("Revenue in USD (log scale)")
+    axis.set_title("Four separately sorted blocks, with the top earners stored last")
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_release_calendar_heatmap(games: pd.DataFrame) -> plt.Figure:
+    """Heatmap of release counts by month and weekday.
+
+    Section 9.2 reports the weekday concentration as a single table. Crossing it
+    with the month shows whether the convention holds all year or is driven by a
+    few unusual weeks.
+    """
+    weekday_order = [
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+    ]
+    counts = pd.crosstab(
+        games["releaseDate"].dt.strftime("%Y-%m"),
+        games["releaseDate"].dt.day_name(),
+    ).reindex(columns=weekday_order)
+
+    figure, axis = plt.subplots(figsize=(8.5, 5))
+    sns.heatmap(
+        counts,
+        annot=True,
+        fmt="d",
+        cmap=SEQUENTIAL_COLOURMAP,
+        linewidths=2,
+        linecolor="white",
+        cbar_kws={"label": "Games released", "shrink": 0.8},
+        annot_kws={"fontsize": 8.5},
+        ax=axis,
+    )
+    axis.set_xlabel("Day of the week")
+    axis.set_ylabel("Release month")
+    axis.set_title("Release counts by month and weekday")
+    axis.grid(False)
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
