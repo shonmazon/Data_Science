@@ -223,3 +223,26 @@ def error_rate_by_revenue_decile(
             "Error rate": grouped["correct"].apply(lambda column: round(1 - column.mean(), 3)),
         }
     )
+
+
+def describe_classifier_hyperparameters() -> pd.DataFrame:
+    """List each classifier's estimator class and configuration.
+
+    The assignment requires hyperparameters to be stated explicitly. Naming the
+    class alongside them means the notebook records what was run without the
+    reader having to open the module.
+    """
+    descriptions = {
+        "Logistic Regression": "max_iter=2000 so the solver converges. Other settings default, so no class weighting.",
+        "Random Forest": "n_estimators=300, min_samples_leaf=2, matching the regression forest. Other settings default.",
+    }
+    return pd.DataFrame(
+        [
+            {
+                "Model": name,
+                "scikit-learn class": type(CLASSIFICATION_MODELS[name]).__name__,
+                "Configuration": descriptions[name],
+            }
+            for name in CLASSIFICATION_MODELS
+        ]
+    ).set_index("Model")

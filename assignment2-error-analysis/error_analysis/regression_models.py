@@ -46,8 +46,15 @@ def describe_hyperparameters() -> pd.DataFrame:
         "Random Forest": "n_estimators=300, min_samples_leaf=2. Other settings default.",
     }
     return pd.DataFrame(
-        [{"Model": name, "Configuration": text} for name, text in descriptions.items()]
-    )
+        [
+            {
+                "Model": name,
+                "scikit-learn class": type(REGRESSION_MODELS[name]).__name__,
+                "Configuration": descriptions[name],
+            }
+            for name in REGRESSION_MODELS
+        ]
+    ).set_index("Model")
 
 
 def sweep_tree_depth(
