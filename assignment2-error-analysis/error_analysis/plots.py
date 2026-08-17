@@ -23,11 +23,18 @@ from src.plotting import (  # noqa: E402
 
 __all__ = [
     "apply_house_style",
+    # chapter 2
     "plot_residuals_vs_predicted",
     "plot_residual_distribution",
     "plot_feature_error_grid",
     "plot_error_by_subgroup",
     "plot_extreme_errors",
+    # chapter 3
+    "plot_tree_depth_curve",
+    "plot_metric_comparison",
+    "plot_fold_stability",
+    "plot_predicted_vs_actual",
+    "plot_explanation_comparison",
 ]
 
 # Matplotlib cannot resolve the "semibold" weight for the default font and
@@ -194,6 +201,151 @@ def plot_extreme_errors(frame: pd.DataFrame, threshold: float) -> plt.Figure:
     axis.set_ylabel("Observed log$_{10}$(revenue)")
     axis.set_title("Where the largest errors sit: overwhelmingly above the diagonal")
     axis.legend(loc="upper left")
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_tree_depth_curve(sweep: pd.DataFrame) -> plt.Figure:
+    """Train and test R2 against tree depth, showing where overfitting begins."""
+    labels = [str(index) for index in sweep.index]
+    positions = np.arange(len(labels))
+
+    figure, axis = plt.subplots(figsize=(9, 4.6))
+    axis.plot(positions, sweep["Train R2"], color=ACCENT_COLOUR, marker="o",
+              markersize=5, label="Training R²")
+    axis.plot(positions, sweep["Test R2"], color=PRIMARY_COLOUR, marker="o",
+              markersize=5, label="Out-of-fold R²")
+    axis.fill_between(positions, sweep["Test R2"], sweep["Train R2"],
+                      color=ACCENT_COLOUR, alpha=0.10, label="Generalisation gap")
+    axis.axhline(0, color=INK_SECONDARY, linewidth=1.0)
+
+    axis.set_xticks(positions)
+    axis.set_xticklabels(labels)
+    axis.set_xlabel("Decision tree max_depth")
+    axis.set_ylabel("R²")
+    axis.set_title("The tree memorises the training folds long before it predicts well")
+    axis.legend(loc="center right")
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_metric_comparison(metrics: pd.DataFrame) -> plt.Figure:
+    """Grouped bars for the error metrics and a separate panel for R2.
+
+    R2 is kept on its own axis because it runs in the opposite direction to the
+    error metrics and can be negative; plotting them together would need two
+    scales on one chart.
+    """
+    models = list(metrics.index)
+    positions = np.arange(len(models))
+
+    figure, axes = plt.subplots(1, 2, figsize=(13, 4.6))
+
+    width = 0.27
+    for offset, (metric, colour) in enumerate(
+        zip(["MAE", "RMSE", "MSE"], CATEGORICAL_COLOURS)
+    ):
+        axes[0].bar(positions + (offset - 1) * width, metrics[metric], width,
+                    color=colour, label=metric, edgecolor="white", linewidth=1.5)
+    axes[0].set_xticks(positions)
+    axes[0].set_xticklabels(models, rotation=20, ha="right")
+    axes[0].set_ylabel("Error (log$_{10}$ units, lower is better)")
+    axes[0].set_title("Error metrics")
+    axes[0].legend()
+
+    colours = [ACCENT_COLOUR if value < 0 else PRIMARY_COLOUR for value in metrics["R2"]]
+    bars = axes[1].bar(positions, metrics["R2"], 0.55, color=colours,
+                       edgecolor="white", linewidth=1.5)
+    for bar, value in zip(bars, metrics["R2"]):
+        axes[1].text(bar.get_x() + bar.get_width() / 2,
+                     value + (0.015 if value >= 0 else -0.045),
+                     f"{value:.3f}", ha="center", fontsize=9, color=INK_SECONDARY)
+    axes[1].axhline(0, color=INK_SECONDARY, linewidth=1.1)
+    axes[1].set_xticks(positions)
+    axes[1].set_xticklabels(models, rotation=20, ha="right")
+    axes[1].set_ylabel("R² (higher is better)")
+    axes[1].set_title("Explained variance")
+
+    figure.suptitle("Model comparison on identical features and folds", fontsize=13,
+                    fontweight="semibold", y=1.02)
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_fold_stability(fold_scores: pd.DataFrame) -> plt.Figure:
+    """Per-fold R2 for each model, showing how stable the comparison is."""
+    figure, axis = plt.subplots(figsize=(9, 4.6))
+    models = list(fold_scores.columns)
+
+    for position, model in enumerate(models):
+        values = fold_scores[model]
+        axis.scatter([position] * len(values), values, s=55, alpha=0.75,
+                     color=PRIMARY_COLOUR, edgecolor="white", linewidth=0.6,
+                     zorder=3)
+        axis.plot([position - 0.18, position + 0.18], [values.mean()] * 2,
+                  color=ACCENT_COLOUR, linewidth=2.4, zorder=4)
+
+    axis.axhline(0, color=INK_SECONDARY, linewidth=1.0)
+    axis.set_xticks(np.arange(len(models)))
+    axis.set_xticklabels(models, rotation=20, ha="right")
+    axis.set_ylabel("R² on the held-out fold")
+    axis.set_title("Each point is one fold; the bar marks the mean")
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_predicted_vs_actual(
+    predictions: dict, observed: pd.Series, models: list[str]
+) -> plt.Figure:
+    """Observed against predicted values, one panel per model."""
+    figure, axes = plt.subplots(1, len(models), figsize=(4.6 * len(models), 4.6),
+                                sharex=True, sharey=True)
+    axes = np.atleast_1d(axes)
+    limits = [observed.min() - 0.2, observed.max() + 0.2]
+
+    for axis, model in zip(axes, models):
+        axis.scatter(predictions[model], observed, s=10, alpha=0.35,
+                     color=PRIMARY_COLOUR, edgecolor="none")
+        axis.plot(limits, limits, color=INK_SECONDARY, linewidth=1.2)
+        axis.set_xlabel("Predicted log$_{10}$(revenue)")
+        axis.set_title(model, fontsize=10)
+    axes[0].set_ylabel("Observed log$_{10}$(revenue)")
+
+    figure.suptitle("None of the models reaches the top of the observed range",
+                    fontsize=13, fontweight="semibold", y=1.02)
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_explanation_comparison(explanations: pd.DataFrame, top_n: int = 8) -> plt.Figure:
+    """Linear coefficients beside forest importances for the leading features."""
+    subset = explanations.head(top_n).iloc[::-1]
+    positions = np.arange(len(subset))
+
+    figure, axes = plt.subplots(1, 2, figsize=(12, 4.4), sharey=True)
+
+    colours = [ACCENT_COLOUR if value < 0 else PRIMARY_COLOUR
+               for value in subset["Linear coefficient"]]
+    axes[0].barh(positions, subset["Linear coefficient"], 0.6, color=colours,
+                 edgecolor="white", linewidth=1.2)
+    axes[0].axvline(0, color=INK_SECONDARY, linewidth=1.1)
+    axes[0].set_yticks(positions)
+    axes[0].set_yticklabels(subset.index)
+    axes[0].set_xlabel("Linear coefficient (signed)")
+    axes[0].set_title("Linear Regression: direction and size")
+
+    axes[1].barh(positions, subset["Random Forest importance"], 0.6,
+                 color=PRIMARY_COLOUR, edgecolor="white", linewidth=1.2)
+    axes[1].set_xlabel("Impurity-based importance (unsigned)")
+    axes[1].set_title("Random Forest: reliance, without direction")
+
+    figure.suptitle("The two models explain the same data differently",
+                    fontsize=13, fontweight="semibold", y=1.02)
     figure.tight_layout()
     plt.close(figure)
     return figure
