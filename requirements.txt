@@ -9,9 +9,6 @@ scipy==1.18.0
 matplotlib==3.11.0
 seaborn==0.13.2
 
-# Missing-data pattern visualization
-missingno==0.5.2
-
 # Modelling and cross-validation (assignment 2)
 scikit-learn==1.9.0
 
