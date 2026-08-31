@@ -45,6 +45,9 @@ __all__ = [
     "plot_score_distribution",
     "plot_lof_sensitivity",
     "plot_anomalies_on_pca",
+    "plot_method_agreement",
+    "plot_sensitivity_curves",
+    "plot_runtime",
 ]
 
 # Matplotlib cannot resolve the "semibold" weight for the default font and falls
@@ -542,5 +545,80 @@ def plot_anomalies_on_pca(scores_2d: np.ndarray, flags: pd.DataFrame,
         "The same 75 games' worth of flags, chosen three different ways",
         fontsize=13, fontweight="semibold", y=1.02,
     )
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_method_agreement(agreement: pd.DataFrame, counts: np.ndarray) -> plt.Figure:
+    """Pairwise agreement between methods, and how many methods flagged each game."""
+    figure, axes = plt.subplots(1, 2, figsize=(13.5, 5))
+
+    sns.heatmap(agreement, annot=True, fmt=".3f", cmap=SEQUENTIAL_COLOURMAP, vmin=0, vmax=1,
+                square=True, linewidths=2, linecolor="white",
+                cbar_kws={"label": "Jaccard overlap", "shrink": 0.8},
+                annot_kws={"fontsize": 10}, ax=axes[0])
+    axes[0].set_title("Pairwise agreement between methods")
+    axes[0].grid(False)
+    axes[0].tick_params(axis="x", rotation=20)
+
+    distribution = pd.Series(counts).value_counts().sort_index()
+    flagged = distribution.drop(0, errors="ignore")
+    colours = [ACCENT_COLOUR if n == 1 else PRIMARY_COLOUR for n in flagged.index]
+    bars = axes[1].bar(flagged.index.astype(str), flagged.to_numpy(), 0.55, color=colours,
+                       edgecolor="white", linewidth=1.5)
+    for bar, value in zip(bars, flagged.to_numpy()):
+        axes[1].text(bar.get_x() + bar.get_width() / 2, value, f"{value}",
+                     ha="center", va="bottom", fontsize=10, color=INK_SECONDARY)
+    axes[1].set_xlabel("Number of methods that flagged the game")
+    axes[1].set_ylabel("Games")
+    axes[1].set_title("Most flagged games are flagged by only one method")
+
+    figure.suptitle("How much do the three methods agree?", fontsize=13,
+                    fontweight="semibold", y=1.02)
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_sensitivity_curves(dimensionality: pd.DataFrame, noise: pd.DataFrame) -> plt.Figure:
+    """Flag-set survival as dimensions and noise are added."""
+    figure, axes = plt.subplots(1, 2, figsize=(13.5, 4.8))
+    colours = ["#2a78d6", "#eb6834", "#1baf7a"]
+    methods = [c for c in dimensionality.columns if c != "Total dimensions"]
+
+    for colour, method in zip(colours, methods):
+        axes[0].plot(dimensionality["Total dimensions"], dimensionality[method],
+                     marker="o", markersize=5, color=colour, label=method)
+    axes[0].set_xscale("log")
+    axes[0].set_xlabel("Total dimensions (log scale)")
+    axes[0].set_ylabel("Jaccard with the 8-dimensional result")
+    axes[0].set_title("Adding pure-noise dimensions")
+    axes[0].set_ylim(0, 1.05); axes[0].legend(fontsize=9)
+
+    for colour, method in zip(colours, noise.columns):
+        axes[1].plot(noise.index, noise[method], marker="o", markersize=5,
+                     color=colour, label=method)
+    axes[1].set_xlabel("Noise added to every value (standard deviations)")
+    axes[1].set_ylabel("Jaccard with the unperturbed result")
+    axes[1].set_title("Perturbing the data")
+    axes[1].set_ylim(0, 1.05); axes[1].legend(fontsize=9)
+
+    figure.suptitle("How stable is each method's answer?", fontsize=13,
+                    fontweight="semibold", y=1.02)
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_runtime(runtime: pd.DataFrame) -> plt.Figure:
+    """Fit-and-score time against dataset size."""
+    figure, axis = plt.subplots(figsize=(9, 4.8))
+    colours = ["#2a78d6", "#eb6834", "#1baf7a"]
+    for colour, method in zip(colours, runtime.columns):
+        axis.plot(runtime.index, runtime[method].clip(lower=1e-4), marker="o",
+                  markersize=5, color=colour, label=method)
+    axis.set_xscale("log"); axis.set_yscale("log")
+    axis.set_xlabel("Rows (log scale)")
+    axis.set_ylabel("Seconds to fit and score (log scale)")
+    axis.set_title("Runtime, at eight dimensions")
+    axis.legend(fontsize=9)
     figure.tight_layout(); plt.close(figure)
     return figure
