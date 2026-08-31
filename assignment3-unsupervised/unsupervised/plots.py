@@ -35,6 +35,12 @@ __all__ = [
     "plot_loadings",
     "plot_reconstruction_error",
     "plot_component_stability",
+    "plot_kmeans_sweep",
+    "plot_k_distance",
+    "plot_dendrogram",
+    "plot_clusters_on_pca",
+    "plot_metric_disagreement",
+    "plot_feature_space",
 ]
 
 # Matplotlib cannot resolve the "semibold" weight for the default font and falls
@@ -311,4 +317,127 @@ def plot_component_stability(similarities: dict) -> plt.Figure:
     axis.set_title("PC1 and PC2 survive resampling; PC3 does not")
     figure.tight_layout()
     plt.close(figure)
+    return figure
+
+
+def plot_kmeans_sweep(sweep: pd.DataFrame) -> plt.Figure:
+    """Inertia and silhouette across k: the elbow and the quality criterion."""
+    figure, axes = plt.subplots(1, 2, figsize=(13, 4.4))
+
+    axes[0].plot(sweep.index, sweep["Inertia"], color=PRIMARY_COLOUR, marker="o", markersize=5)
+    axes[0].set_xlabel("k"); axes[0].set_ylabel("Within-cluster sum of squares")
+    axes[0].set_title("Inertia declines smoothly: no elbow")
+
+    axes[1].plot(sweep.index, sweep["Silhouette"], color=ACCENT_COLOUR, marker="o", markersize=5)
+    axes[1].axhline(0.25, color=INK_SECONDARY, linewidth=1.1, linestyle="--")
+    axes[1].annotate("0.25: conventional floor for 'some structure'",
+                     xy=(sweep.index[2], 0.257), fontsize=9, color=INK_SECONDARY)
+    axes[1].set_ylim(0, 0.42)
+    axes[1].set_xlabel("k"); axes[1].set_ylabel("Mean silhouette")
+    axes[1].set_title("Silhouette never reaches the conventional floor")
+
+    figure.suptitle("K-Means across k", fontsize=13, fontweight="semibold", y=1.02)
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_k_distance(curve: np.ndarray, eps: float, n_neighbors: int) -> plt.Figure:
+    """Sorted k-th nearest-neighbour distance, used to choose DBSCAN's eps."""
+    figure, axis = plt.subplots(figsize=(9, 4.6))
+    axis.plot(np.arange(len(curve)), curve, color=PRIMARY_COLOUR, linewidth=2)
+    axis.axhline(eps, color=ACCENT_COLOUR, linewidth=1.6)
+    axis.annotate(f"chosen eps = {eps}", xy=(len(curve) * 0.04, eps + 0.09),
+                  fontsize=9.5, color=ACCENT_COLOUR)
+    axis.set_xlabel("Games, sorted by distance")
+    axis.set_ylabel(f"Distance to the {n_neighbors}th nearest neighbour")
+    axis.set_title("The k-distance curve bends gradually rather than at a knee")
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_dendrogram(tree, labels=None, title="", colour_threshold=None) -> plt.Figure:
+    """Dendrogram of a hierarchical clustering."""
+    from scipy.cluster.hierarchy import dendrogram
+
+    figure, axis = plt.subplots(figsize=(11, 4.8))
+    dendrogram(
+        tree, ax=axis, labels=labels, color_threshold=colour_threshold,
+        above_threshold_color=INK_SECONDARY, no_labels=labels is None,
+    )
+    axis.set_ylabel("Merge distance")
+    axis.set_title(title)
+    if labels is not None:
+        axis.tick_params(axis="x", rotation=35, labelsize=9)
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_clusters_on_pca(scores: np.ndarray, labellings: dict, variance: pd.DataFrame) -> plt.Figure:
+    """Each method's partition drawn on the same two principal components."""
+    figure, axes = plt.subplots(1, len(labellings), figsize=(5.2 * len(labellings), 5))
+    axes = np.atleast_1d(axes)
+    palette = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#4a3aa7"]
+
+    for axis, (name, labels) in zip(axes, labellings.items()):
+        for value in sorted(set(labels)):
+            mask = labels == value
+            is_noise = value == -1
+            axis.scatter(
+                scores[mask, 0], scores[mask, 1], s=11,
+                alpha=0.28 if is_noise else 0.65,
+                color=INK_SECONDARY if is_noise else palette[value % len(palette)],
+                edgecolor="none",
+                label=f"noise ({mask.sum()})" if is_noise else f"cluster {value} ({mask.sum()})",
+            )
+        axis.set_xlabel(f"PC1 ({variance['Explained variance'].iloc[0]:.1%})")
+        axis.set_ylabel(f"PC2 ({variance['Explained variance'].iloc[1]:.1%})")
+        axis.set_title(name, fontsize=10)
+        axis.legend(fontsize=8, loc="upper right")
+
+    figure.suptitle("The same data, three partitions, one projection",
+                    fontsize=13, fontweight="semibold", y=1.02)
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_metric_disagreement(sweep: pd.DataFrame, ratios: pd.Series) -> plt.Figure:
+    """The named variance ratio against silhouette as k grows."""
+    figure, axes = plt.subplots(1, 2, figsize=(13, 4.4))
+
+    axes[0].plot(ratios.index, ratios.to_numpy(), color=ACCENT_COLOUR, marker="o", markersize=5)
+    axes[0].set_xlabel("k"); axes[0].set_ylabel("Within-cluster variance / global variance")
+    axes[0].set_title("The named metric improves without limit as k grows")
+
+    axes[1].plot(sweep.index, sweep["Silhouette"], color=PRIMARY_COLOUR, marker="o", markersize=5)
+    axes[1].set_xlabel("k"); axes[1].set_ylabel("Mean silhouette")
+    axes[1].set_title("Silhouette, which penalises over-splitting, declines")
+
+    figure.suptitle("Why the variance ratio cannot choose k", fontsize=13,
+                    fontweight="semibold", y=1.02)
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_feature_space(distance: pd.DataFrame, tree) -> plt.Figure:
+    """Feature distance matrix beside the dendrogram of the transposed matrix."""
+    from scipy.cluster.hierarchy import dendrogram
+
+    figure, axes = plt.subplots(1, 2, figsize=(15, 5.6))
+
+    sns.heatmap(distance, annot=True, fmt=".2f", cmap=SEQUENTIAL_COLOURMAP, vmin=0, vmax=1,
+                square=True, linewidths=2, linecolor="white",
+                cbar_kws={"label": "1 - |correlation|", "shrink": 0.8},
+                annot_kws={"fontsize": 7.5}, ax=axes[0])
+    axes[0].set_title("Distance between features")
+    axes[0].grid(False)
+
+    dendrogram(tree, ax=axes[1], labels=list(distance.index), color_threshold=0.7,
+               above_threshold_color=INK_SECONDARY)
+    axes[1].set_ylabel("Merge distance (1 - |r|)")
+    axes[1].set_title("Hierarchy of the feature space")
+    axes[1].tick_params(axis="x", rotation=35, labelsize=9)
+
+    figure.suptitle("Clustering the transpose: which features carry the same information",
+                    fontsize=13, fontweight="semibold", y=1.02)
+    figure.tight_layout(); plt.close(figure)
     return figure
