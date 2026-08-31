@@ -50,6 +50,8 @@ __all__ = [
     "plot_runtime",
     "plot_distance_concentration",
     "plot_projection_distortion",
+    "plot_dashboard_overview",
+    "plot_dashboard_pairplot",
 ]
 
 # Matplotlib cannot resolve the "semibold" weight for the default font and falls
@@ -682,4 +684,107 @@ def plot_projection_distortion(projected_distances: np.ndarray, full_distances: 
     axis.set_title("Points can touch in the picture and be far apart in the data")
     axis.legend(fontsize=9, loc="lower right")
     figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_dashboard_overview(scores_2d: np.ndarray, cluster_labels: np.ndarray,
+                            methods_per_game: np.ndarray, correlation: pd.DataFrame,
+                            variance: pd.DataFrame) -> plt.Figure:
+    """Four-panel overview: clusters, anomaly consensus, correlations, agreement.
+
+    Everything shown here is computed in the required chapters; this figure only
+    brings the four results onto one screen.
+    """
+    figure, axes = plt.subplots(2, 2, figsize=(15, 11))
+    x_label = f"PC1 ({variance['Explained variance'].iloc[0]:.1%})"
+    y_label = f"PC2 ({variance['Explained variance'].iloc[1]:.1%})"
+    palette = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]
+
+    axis = axes[0, 0]
+    for value in sorted(set(cluster_labels)):
+        mask = cluster_labels == value
+        axis.scatter(scores_2d[mask, 0], scores_2d[mask, 1], s=11, alpha=0.6,
+                     color=palette[value % len(palette)], edgecolor="none",
+                     label=f"cluster {value} ({mask.sum()})")
+    axis.set_title("Clusters (K-Means, k=3) on the PCA projection", fontsize=11)
+    axis.legend(fontsize=8, loc="upper right")
+
+    axis = axes[0, 1]
+    axis.scatter(scores_2d[methods_per_game == 0, 0], scores_2d[methods_per_game == 0, 1],
+                 s=9, alpha=0.22, color=INK_SECONDARY, edgecolor="none",
+                 label=f"not flagged ({(methods_per_game == 0).sum():,})")
+    for count, colour, size in [(1, "#eda100", 20), (2, "#eb6834", 30), (3, "#b3261e", 46)]:
+        mask = methods_per_game == count
+        axis.scatter(scores_2d[mask, 0], scores_2d[mask, 1], s=size, alpha=0.9,
+                     color=colour, edgecolor="white", linewidth=0.4,
+                     label=f"flagged by {count} ({mask.sum()})")
+    axis.set_title("Anomalies, shaded by how many methods agree", fontsize=11)
+    axis.legend(fontsize=8, loc="upper right")
+
+    for axis in (axes[0, 0], axes[0, 1]):
+        axis.set_xlabel(x_label); axis.set_ylabel(y_label)
+
+    axis = axes[1, 0]
+    sns.heatmap(correlation, annot=True, fmt=".2f", cmap=DIVERGING_COLOURMAP, vmin=-1,
+                vmax=1, center=0, square=True, linewidths=1.5, linecolor="white",
+                cbar_kws={"label": "Pearson r", "shrink": 0.72},
+                annot_kws={"fontsize": 7}, ax=axis)
+    axis.set_title("Feature correlations (analysis scale)", fontsize=11)
+    axis.grid(False)
+    axis.tick_params(axis="x", rotation=55, labelsize=7.5)
+    axis.tick_params(axis="y", labelsize=7.5)
+
+    axis = axes[1, 1]
+    distribution = pd.Series(methods_per_game).value_counts().sort_index().drop(0, errors="ignore")
+    bars = axis.bar(distribution.index.astype(str), distribution.to_numpy(), 0.55,
+                    color=["#eda100", "#eb6834", "#b3261e"][: len(distribution)],
+                    edgecolor="white", linewidth=1.5)
+    for bar, value in zip(bars, distribution.to_numpy()):
+        axis.text(bar.get_x() + bar.get_width() / 2, value, f"{value}", ha="center",
+                  va="bottom", fontsize=10, color=INK_SECONDARY)
+    axis.set_xlabel("Methods that flagged the game")
+    axis.set_ylabel("Games")
+    axis.set_title("Agreement between the three detectors", fontsize=11)
+
+    figure.suptitle("Dashboard — structure and anomalies at a glance",
+                    fontsize=14, fontweight="semibold", y=1.0)
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_dashboard_pairplot(frame: pd.DataFrame, features: list[str],
+                            methods_per_game: np.ndarray) -> plt.Figure:
+    """Scatter matrix of the leading features, marked by anomaly consensus."""
+    size = len(features)
+    figure, axes = plt.subplots(size, size, figsize=(3.0 * size, 3.0 * size))
+    flagged = methods_per_game >= 2
+
+    for row, y_feature in enumerate(features):
+        for column, x_feature in enumerate(features):
+            axis = axes[row, column]
+            if row == column:
+                axis.hist(frame[x_feature].dropna(), bins=35, color=PRIMARY_COLOUR)
+                axis.set_yticks([])
+            else:
+                axis.scatter(frame.loc[~flagged, x_feature], frame.loc[~flagged, y_feature],
+                             s=5, alpha=0.18, color=PRIMARY_COLOUR, edgecolor="none")
+                axis.scatter(frame.loc[flagged, x_feature], frame.loc[flagged, y_feature],
+                             s=16, alpha=0.85, color=ACCENT_COLOUR, edgecolor="none")
+            if row == size - 1:
+                axis.set_xlabel(x_feature, fontsize=9)
+            else:
+                axis.set_xticklabels([])
+            if column == 0:
+                axis.set_ylabel(y_feature, fontsize=9)
+            else:
+                axis.set_yticklabels([])
+
+    figure.suptitle(
+        f"Pairplot on the analysis scale; orange marks the {int(flagged.sum())} games "
+        "flagged by at least two methods",
+        fontsize=13, fontweight="semibold", y=1.0,
+    )
+    figure.tight_layout()
+    plt.close(figure)
     return figure
