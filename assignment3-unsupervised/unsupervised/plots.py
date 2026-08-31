@@ -15,6 +15,7 @@ from scipy.stats import kurtosis, skew
 from .data_setup import ASSIGNMENT1_DIR  # noqa: F401  (puts A1 on the import path)
 from src.plotting import (  # noqa: E402
     DIVERGING_COLOURMAP,
+    GRID_COLOUR,
     INK_PRIMARY,
     INK_SECONDARY,
     PRIMARY_COLOUR,
@@ -28,6 +29,12 @@ __all__ = [
     "plot_boxplot_grid",
     "plot_transform_effect",
     "plot_correlation_pair",
+    "plot_scree",
+    "plot_projection_2d",
+    "plot_projection_3d",
+    "plot_loadings",
+    "plot_reconstruction_error",
+    "plot_component_stability",
 ]
 
 # Matplotlib cannot resolve the "semibold" weight for the default font and falls
@@ -148,6 +155,160 @@ def plot_correlation_pair(raw_matrix: pd.DataFrame, log_matrix: pd.DataFrame) ->
         "Heavy tails suppress correlation: the same data, two scales",
         fontsize=13, fontweight="semibold", y=1.02,
     )
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_scree(variance: pd.DataFrame) -> plt.Figure:
+    """Scree plot beside the cumulative explained variance."""
+    positions = np.arange(1, len(variance) + 1)
+    figure, axes = plt.subplots(1, 2, figsize=(13, 4.6))
+
+    axes[0].bar(positions, variance["Explained variance"], 0.6, color=PRIMARY_COLOUR,
+                edgecolor="white", linewidth=1.5)
+    axes[0].plot(positions, variance["Explained variance"], color=ACCENT_COLOUR,
+                 marker="o", markersize=5, linewidth=1.6)
+    axes[0].set_xticks(positions)
+    axes[0].set_xlabel("Principal component")
+    axes[0].set_ylabel("Share of total variance")
+    axes[0].set_title("Scree plot: no sharp elbow")
+
+    axes[1].plot(positions, variance["Cumulative"], color=PRIMARY_COLOUR, marker="o",
+                 markersize=5, linewidth=2)
+    for level, style in [(0.80, ":"), (0.90, "--")]:
+        axes[1].axhline(level, color=INK_SECONDARY, linewidth=1.0, linestyle=style)
+        axes[1].annotate(f"{level:.0%}", xy=(0.6, level + 0.012), fontsize=9,
+                         color=INK_SECONDARY)
+    axes[1].set_xticks(positions)
+    axes[1].set_ylim(0, 1.03)
+    axes[1].set_xlabel("Number of components retained")
+    axes[1].set_ylabel("Cumulative variance")
+    axes[1].set_title("Cumulative explained variance")
+
+    figure.suptitle("Variance is spread across components rather than concentrated",
+                    fontsize=13, fontweight="semibold", y=1.02)
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_projection_2d(scores: np.ndarray, frame: pd.DataFrame, variance: pd.DataFrame) -> plt.Figure:
+    """The 2D projection, annotated two ways with variables PCA never saw."""
+    figure, axes = plt.subplots(1, 2, figsize=(14, 5.8))
+    labels = [f"PC{i} ({variance['Explained variance'].iloc[i-1]:.1%})" for i in (1, 2)]
+
+    order = ["Indie", "AA", "AAA"]
+    colours = ["#2a78d6", "#eb6834", "#1baf7a"]
+    for name, colour in zip(order, colours):
+        mask = (frame["plotClass"].astype(str) == name).to_numpy()
+        axes[0].scatter(scores[mask, 0], scores[mask, 1], s=14, alpha=0.6, color=colour,
+                        edgecolor="none", label=f"{name} (n={mask.sum():,})")
+    axes[0].legend(title="Publisher class", loc="upper left")
+    axes[0].set_title("Coloured by studio scale, which PCA never saw")
+
+    revenue = np.log10(frame["revenue"].to_numpy())
+    points = axes[1].scatter(scores[:, 0], scores[:, 1], s=14, alpha=0.7, c=revenue,
+                             cmap=SEQUENTIAL_COLOURMAP, edgecolor="none")
+    figure.colorbar(points, ax=axes[1], shrink=0.85).set_label("log$_{10}$(revenue)")
+    axes[1].set_title("Coloured by revenue: PC1 is a commercial-scale axis")
+
+    for axis in axes:
+        axis.set_xlabel(labels[0])
+        axis.set_ylabel(labels[1])
+
+    figure.suptitle("Projection onto the first two principal components",
+                    fontsize=13, fontweight="semibold", y=1.01)
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_projection_3d(scores: np.ndarray, frame: pd.DataFrame, variance: pd.DataFrame) -> plt.Figure:
+    """The 3D projection, viewed from two angles."""
+    figure = plt.figure(figsize=(14, 6))
+    order = ["Indie", "AA", "AAA"]
+    colours = ["#2a78d6", "#eb6834", "#1baf7a"]
+    cumulative = variance["Cumulative"].iloc[2]
+
+    for position, (elevation, azimuth) in enumerate([(18, 45), (18, 135)], start=1):
+        axis = figure.add_subplot(1, 2, position, projection="3d")
+        for name, colour in zip(order, colours):
+            mask = (frame["plotClass"].astype(str) == name).to_numpy()
+            axis.scatter(scores[mask, 0], scores[mask, 1], scores[mask, 2],
+                         s=16, alpha=0.75, color=colour, edgecolor="none",
+                         depthshade=False, label=name)
+        axis.view_init(elev=elevation, azim=azimuth)
+        # The default translucent panes wash the points out at this density.
+        for pane in (axis.xaxis, axis.yaxis, axis.zaxis):
+            pane.pane.set_alpha(0.0)
+            pane.pane.set_edgecolor(GRID_COLOUR)
+        axis.set_xlabel("PC1"); axis.set_ylabel("PC2"); axis.set_zlabel("PC3")
+        axis.set_title(f"view {position}", fontsize=10)
+        if position == 1:
+            axis.legend(title="Publisher class", loc="upper left", fontsize=8)
+
+    figure.suptitle(
+        f"Projection onto the first three components, together {cumulative:.1%} of variance",
+        fontsize=13, fontweight="semibold", y=0.98,
+    )
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_loadings(loadings: pd.DataFrame) -> plt.Figure:
+    """Heatmap of how each original feature contributes to each component."""
+    figure, axis = plt.subplots(figsize=(8, 5.4))
+    sns.heatmap(loadings, annot=True, fmt=".2f", cmap=DIVERGING_COLOURMAP, center=0,
+                vmin=-0.8, vmax=0.8, linewidths=2, linecolor="white",
+                cbar_kws={"label": "Loading", "shrink": 0.85},
+                annot_kws={"fontsize": 9}, ax=axis)
+    axis.set_title("Feature loadings on the leading components")
+    axis.grid(False)
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_reconstruction_error(errors: pd.DataFrame) -> plt.Figure:
+    """Per-feature reconstruction error as components are added back."""
+    figure, axis = plt.subplots(figsize=(9.5, 5))
+    features = [c for c in errors.columns if c != "Variance kept"]
+    palette = plt.cm.viridis(np.linspace(0.1, 0.9, len(features)))
+
+    for colour, feature in zip(palette, features):
+        axis.plot(errors.index, errors[feature], marker="o", markersize=5,
+                  color=colour, label=feature)
+
+    axis.set_xticks(list(errors.index))
+    axis.set_xlabel("Components retained")
+    axis.set_ylabel("Reconstruction RMSE (standard deviations)")
+    axis.set_title("What a projection discards, feature by feature")
+    axis.legend(ncol=2, fontsize=8.5)
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_component_stability(similarities: dict) -> plt.Figure:
+    """Distribution of bootstrap agreement with each full-sample component axis."""
+    figure, axis = plt.subplots(figsize=(9, 4.8))
+    data = [np.array(similarities[i]) for i in sorted(similarities)]
+    labels = [f"PC{i + 1}" for i in sorted(similarities)]
+
+    parts = axis.violinplot(data, showmedians=True, widths=0.7)
+    for body, colour in zip(parts["bodies"], ["#2a78d6", "#2a78d6", "#eb6834"]):
+        body.set_facecolor(colour); body.set_alpha(0.8)
+    for key in ("cmedians", "cbars", "cmins", "cmaxes"):
+        if key in parts:
+            parts[key].set_color(INK_SECONDARY)
+
+    axis.axhline(0.9, color=INK_SECONDARY, linewidth=1.1, linestyle="--")
+    axis.annotate("0.9", xy=(0.55, 0.905), fontsize=9, color=INK_SECONDARY)
+    axis.set_xticks(range(1, len(labels) + 1), labels)
+    axis.set_ylabel("|cosine| with the full-sample axis")
+    axis.set_title("PC1 and PC2 survive resampling; PC3 does not")
     figure.tight_layout()
     plt.close(figure)
     return figure
