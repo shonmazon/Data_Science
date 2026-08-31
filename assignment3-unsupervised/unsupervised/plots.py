@@ -41,6 +41,10 @@ __all__ = [
     "plot_clusters_on_pca",
     "plot_metric_disagreement",
     "plot_feature_space",
+    "plot_zscore_diagnostics",
+    "plot_score_distribution",
+    "plot_lof_sensitivity",
+    "plot_anomalies_on_pca",
 ]
 
 # Matplotlib cannot resolve the "semibold" weight for the default font and falls
@@ -439,5 +443,104 @@ def plot_feature_space(distance: pd.DataFrame, tree) -> plt.Figure:
 
     figure.suptitle("Clustering the transpose: which features carry the same information",
                     fontsize=13, fontweight="semibold", y=1.02)
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_zscore_diagnostics(diagnostics: pd.DataFrame, threshold: float = 3.0) -> plt.Figure:
+    """Which features can produce a Z-score flag at all, and which cannot."""
+    figure, axes = plt.subplots(1, 2, figsize=(13.5, 4.8))
+
+    order = diagnostics["Max |z| observed"].sort_values()
+    colours = [INK_SECONDARY if v < threshold else PRIMARY_COLOUR for v in order]
+    axes[0].barh(np.arange(len(order)), order.to_numpy(), 0.62, color=colours,
+                 edgecolor="white", linewidth=1.2)
+    axes[0].axvline(threshold, color=ACCENT_COLOUR, linewidth=1.6)
+    axes[0].annotate(f"threshold |z| = {threshold:g}", xy=(threshold + 0.1, 0.1),
+                     fontsize=9, color=ACCENT_COLOUR)
+    axes[0].set_yticks(np.arange(len(order)), order.index)
+    axes[0].set_xlabel("Largest standardised deviation observed")
+    axes[0].set_title("Three features never reach the threshold")
+
+    counts = diagnostics[f"Games with |z| > {threshold:g}"].sort_values()
+    axes[1].barh(np.arange(len(counts)), counts.to_numpy(), 0.62, color=PRIMARY_COLOUR,
+                 edgecolor="white", linewidth=1.2)
+    axes[1].set_yticks(np.arange(len(counts)), counts.index)
+    axes[1].set_xlabel("Games flagged by this feature alone")
+    axes[1].set_title("All flags come from five of the eight features")
+
+    figure.suptitle("Diagnostics for the feature-wise Z-score rule", fontsize=13,
+                    fontweight="semibold", y=1.02)
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_score_distribution(scores: np.ndarray, flags: np.ndarray, title: str,
+                            score_label: str) -> plt.Figure:
+    """Anomaly score distribution with the decision cut-off marked."""
+    figure, axes = plt.subplots(1, 2, figsize=(13, 4.4))
+
+    axes[0].hist(scores, bins=60, color=PRIMARY_COLOUR)
+    axes[0].axvline(scores[flags].min(), color=ACCENT_COLOUR, linewidth=1.8)
+    axes[0].annotate("cut-off", xy=(scores[flags].min(), axes[0].get_ylim()[1] * 0.8),
+                     xytext=(scores[flags].min() - (scores.max() - scores.min()) * 0.30,
+                             axes[0].get_ylim()[1] * 0.8),
+                     fontsize=9, color=ACCENT_COLOUR,
+                     arrowprops={"arrowstyle": "->", "color": ACCENT_COLOUR, "linewidth": 1})
+    axes[0].set_xlabel(score_label); axes[0].set_ylabel("Games")
+    axes[0].set_title("The score distribution is continuous, with no natural break")
+
+    ordered = np.sort(scores)[::-1]
+    axes[1].plot(np.arange(1, len(ordered) + 1), ordered, color=PRIMARY_COLOUR, linewidth=2)
+    axes[1].axvline(flags.sum(), color=ACCENT_COLOUR, linewidth=1.6)
+    axes[1].annotate(f"{int(flags.sum())} flagged", xy=(flags.sum() + 40, ordered[0] * 0.98),
+                     fontsize=9, color=ACCENT_COLOUR)
+    axes[1].set_xscale("log")
+    axes[1].set_xlabel("Games, ranked by score (log scale)"); axes[1].set_ylabel(score_label)
+    axes[1].set_title("Where the threshold falls on the ranking")
+
+    figure.suptitle(title, fontsize=13, fontweight="semibold", y=1.02)
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_lof_sensitivity(sweep: pd.DataFrame, reference_k: int) -> plt.Figure:
+    """Agreement of the flagged set with a reference k, across k."""
+    figure, axis = plt.subplots(figsize=(9, 4.6))
+    column = f"Jaccard with k={reference_k}"
+    axis.plot(sweep.index, sweep[column], color=PRIMARY_COLOUR, marker="o", markersize=6)
+    axis.axvline(reference_k, color=ACCENT_COLOUR, linewidth=1.4)
+    axis.annotate(f"reference k = {reference_k}", xy=(reference_k + 2, 0.5),
+                  fontsize=9, color=ACCENT_COLOUR)
+    axis.set_ylim(0, 1.05)
+    axis.set_xlabel("n_neighbors")
+    axis.set_ylabel(f"Jaccard overlap with the k={reference_k} flag set")
+    axis.set_title("The set of flagged games changes substantially with k")
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_anomalies_on_pca(scores_2d: np.ndarray, flags: pd.DataFrame,
+                          variance: pd.DataFrame) -> plt.Figure:
+    """Each method's flagged points on the shared projection."""
+    figure, axes = plt.subplots(1, flags.shape[1], figsize=(5.2 * flags.shape[1], 5))
+    axes = np.atleast_1d(axes)
+
+    for axis, method in zip(axes, flags.columns):
+        mask = flags[method].to_numpy()
+        axis.scatter(scores_2d[~mask, 0], scores_2d[~mask, 1], s=10, alpha=0.3,
+                     color=PRIMARY_COLOUR, edgecolor="none", label=f"normal ({(~mask).sum():,})")
+        axis.scatter(scores_2d[mask, 0], scores_2d[mask, 1], s=30, alpha=0.9,
+                     color=ACCENT_COLOUR, edgecolor="white", linewidth=0.4,
+                     label=f"flagged ({mask.sum()})")
+        axis.set_xlabel(f"PC1 ({variance['Explained variance'].iloc[0]:.1%})")
+        axis.set_ylabel(f"PC2 ({variance['Explained variance'].iloc[1]:.1%})")
+        axis.set_title(method, fontsize=10)
+        axis.legend(fontsize=8.5, loc="upper right")
+
+    figure.suptitle(
+        "The same 75 games' worth of flags, chosen three different ways",
+        fontsize=13, fontweight="semibold", y=1.02,
+    )
     figure.tight_layout(); plt.close(figure)
     return figure
