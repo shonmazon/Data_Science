@@ -48,6 +48,8 @@ __all__ = [
     "plot_method_agreement",
     "plot_sensitivity_curves",
     "plot_runtime",
+    "plot_distance_concentration",
+    "plot_projection_distortion",
 ]
 
 # Matplotlib cannot resolve the "semibold" weight for the default font and falls
@@ -620,5 +622,64 @@ def plot_runtime(runtime: pd.DataFrame) -> plt.Figure:
     axis.set_ylabel("Seconds to fit and score (log scale)")
     axis.set_title("Runtime, at eight dimensions")
     axis.legend(fontsize=9)
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_distance_concentration(concentration: pd.DataFrame, observed: float,
+                                observed_dimension: int) -> plt.Figure:
+    """How nearest and farthest neighbour distances converge with dimension."""
+    figure, axes = plt.subplots(1, 2, figsize=(13, 4.6))
+
+    axes[0].plot(concentration.index, concentration["Mean nearest / farthest"],
+                 color=PRIMARY_COLOUR, marker="o", markersize=6)
+    axes[0].scatter([observed_dimension], [observed], s=90, color=ACCENT_COLOUR,
+                    zorder=5, label="this dataset")
+    axes[0].axhline(1.0, color=INK_SECONDARY, linewidth=1.1, linestyle="--")
+    axes[0].annotate("1.0: nearest and farthest identical", xy=(3, 0.94),
+                     fontsize=9, color=INK_SECONDARY)
+    axes[0].set_xscale("log"); axes[0].set_ylim(0, 1.08)
+    axes[0].set_xlabel("Dimension (log scale)")
+    axes[0].set_ylabel("Mean nearest / farthest distance")
+    axes[0].set_title("Neighbours become equidistant as dimension grows")
+    axes[0].legend(fontsize=9)
+
+    axes[1].plot(concentration.index, concentration["Relative contrast (max-min)/min"],
+                 color=ACCENT_COLOUR, marker="o", markersize=6)
+    axes[1].set_xscale("log"); axes[1].set_yscale("log")
+    axes[1].set_xlabel("Dimension (log scale)")
+    axes[1].set_ylabel("(max - min) / min, log scale")
+    axes[1].set_title("Relative contrast between distances collapses")
+
+    figure.suptitle("The curse of dimensionality, measured on Gaussian data",
+                    fontsize=13, fontweight="semibold", y=1.02)
+    figure.tight_layout(); plt.close(figure)
+    return figure
+
+
+def plot_projection_distortion(projected_distances: np.ndarray, full_distances: np.ndarray,
+                               sample: int = 40000, seed: int = 0) -> plt.Figure:
+    """Distance in the projection against distance in the original space."""
+    generator = np.random.default_rng(seed)
+    rows, columns = np.triu_indices_from(full_distances, 1)
+    picked = generator.choice(len(rows), min(sample, len(rows)), replace=False)
+    projected = projected_distances[rows[picked], columns[picked]]
+    full = full_distances[rows[picked], columns[picked]]
+
+    figure, axis = plt.subplots(figsize=(7.6, 6))
+    axis.scatter(projected, full, s=3, alpha=0.10, color=PRIMARY_COLOUR, edgecolor="none")
+    limit = max(projected.max(), full.max())
+    axis.plot([0, limit], [0, limit], color=INK_SECONDARY, linewidth=1.2,
+              label="perfect preservation")
+
+    misleading = (projected < 0.5) & (full > np.percentile(full, 90))
+    axis.scatter(projected[misleading], full[misleading], s=8, alpha=0.55,
+                 color=ACCENT_COLOUR, edgecolor="none",
+                 label="adjacent in 2D, distant in 8D")
+
+    axis.set_xlabel("Distance in the 2D projection")
+    axis.set_ylabel("Distance in the original 8 dimensions")
+    axis.set_title("Points can touch in the picture and be far apart in the data")
+    axis.legend(fontsize=9, loc="lower right")
     figure.tight_layout(); plt.close(figure)
     return figure
