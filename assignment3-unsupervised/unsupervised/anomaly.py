@@ -228,3 +228,47 @@ def collect_flags(matrix: np.ndarray) -> pd.DataFrame:
             "LOF": local.to_numpy(),
         }
     )
+
+
+def describe_hyperparameters() -> pd.DataFrame:
+    """Every setting used in chapter 5, with the class that consumes it.
+
+    The assignment requires methodological choices to be stated. Recording the
+    scikit-learn class alongside each configuration means the notebook itself
+    documents exactly what was run, without the reader having to open a module.
+    """
+    from sklearn.ensemble import IsolationForest as _IsolationForest
+    from sklearn.impute import SimpleImputer as _SimpleImputer
+    from sklearn.neighbors import LocalOutlierFactor as _LocalOutlierFactor
+    from sklearn.preprocessing import StandardScaler as _StandardScaler
+
+    rows = [
+        ("Preprocessing: imputation", _SimpleImputer.__name__,
+         "strategy='median'",
+         "Fills the 100 placeholder-derived missing values; median because "
+         "section 2.2 showed the features are skewed."),
+        ("Preprocessing: scaling", _StandardScaler.__name__,
+         "default (zero mean, unit variance)",
+         "Required by every distance-based method here; section 6.3 shows LOF "
+         "loses 80% of its flags without it."),
+        ("Z-score, feature-wise", "numpy / pandas (no estimator)",
+         f"threshold |z| > {ZSCORE_THRESHOLD:g}",
+         "Conventional 3-sigma cut; section 5.1 shows the Gaussian basis for it "
+         "does not hold for any feature."),
+        ("Z-score, global", "numpy.linalg.pinv (Mahalanobis)",
+         f"top {CONTAMINATION:.0%} by squared distance",
+         "Covariance-aware alternative to the feature-wise rule; cut at the same "
+         "share as the other two methods."),
+        ("Isolation Forest", _IsolationForest.__name__,
+         f"n_estimators={ISOLATION_TREES}, contamination={CONTAMINATION}, "
+         f"random_state={RANDOM_STATE}, n_jobs=-1",
+         "300 trees for a stable path-length average; contamination is a cut on "
+         "the ranking, not a discovery (section 5.2)."),
+        ("Local Outlier Factor", _LocalOutlierFactor.__name__,
+         f"n_neighbors={LOF_NEIGHBOURS}, contamination={CONTAMINATION}",
+         "k=20 sits inside the usual 10-50 range; section 5.3 measures how much "
+         "the flagged set moves with it."),
+    ]
+    return pd.DataFrame(
+        rows, columns=["Step", "scikit-learn class", "Configuration", "Why this value"]
+    ).set_index("Step")

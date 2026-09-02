@@ -12,5 +12,8 @@ seaborn==0.13.2
 # Modelling and cross-validation (assignment 2)
 scikit-learn==1.9.0
 
+# Interactive controls (final homework, optional dashboard)
+ipywidgets==8.1.9
+
 # Notebook execution
 ipykernel==7.3.0

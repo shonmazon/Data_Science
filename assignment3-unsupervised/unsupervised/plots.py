@@ -52,6 +52,7 @@ __all__ = [
     "plot_projection_distortion",
     "plot_dashboard_overview",
     "plot_dashboard_pairplot",
+    "plot_threshold_view",
 ]
 
 # Matplotlib cannot resolve the "semibold" weight for the default font and falls
@@ -784,6 +785,52 @@ def plot_dashboard_pairplot(frame: pd.DataFrame, features: list[str],
         f"Pairplot on the analysis scale; orange marks the {int(flagged.sum())} games "
         "flagged by at least two methods",
         fontsize=13, fontweight="semibold", y=1.0,
+    )
+    figure.tight_layout()
+    plt.close(figure)
+    return figure
+
+
+def plot_threshold_view(scores_1d: np.ndarray, scores_2d: np.ndarray,
+                        variance: pd.DataFrame, contamination: float) -> plt.Figure:
+    """Anomalies at a chosen contamination, drawn on the PCA projection.
+
+    Re-cuts a ranking that was computed once rather than refitting. Section 5.2
+    established that contamination changes only where the Isolation Forest's
+    ordering is cut and not the ordering itself, so refitting per adjustment
+    would be both slower and methodologically pointless.
+    """
+    count = max(1, int(round(contamination * len(scores_1d))))
+    cutoff = np.sort(scores_1d)[-count]
+    flagged = scores_1d >= cutoff
+
+    figure, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    axes[0].scatter(scores_2d[~flagged, 0], scores_2d[~flagged, 1], s=10, alpha=0.28,
+                    color=PRIMARY_COLOUR, edgecolor="none",
+                    label=f"not flagged ({(~flagged).sum():,})")
+    axes[0].scatter(scores_2d[flagged, 0], scores_2d[flagged, 1], s=30, alpha=0.9,
+                    color=ACCENT_COLOUR, edgecolor="white", linewidth=0.4,
+                    label=f"flagged ({flagged.sum()})")
+    axes[0].set_xlabel(f"PC1 ({variance['Explained variance'].iloc[0]:.1%})")
+    axes[0].set_ylabel(f"PC2 ({variance['Explained variance'].iloc[1]:.1%})")
+    axes[0].set_title(f"Isolation Forest at contamination = {contamination:.0%}", fontsize=11)
+    axes[0].legend(fontsize=9, loc="upper right")
+
+    axes[1].hist(scores_1d, bins=60, color=PRIMARY_COLOUR)
+    axes[1].axvline(cutoff, color=ACCENT_COLOUR, linewidth=1.8)
+    axes[1].annotate(f"cut at {cutoff:.3f}", xy=(cutoff, axes[1].get_ylim()[1] * 0.85),
+                     xytext=(cutoff - (scores_1d.max() - scores_1d.min()) * 0.42,
+                             axes[1].get_ylim()[1] * 0.85),
+                     fontsize=9, color=ACCENT_COLOUR,
+                     arrowprops={"arrowstyle": "->", "color": ACCENT_COLOUR, "linewidth": 1})
+    axes[1].set_xlabel("Isolation Forest anomaly score")
+    axes[1].set_ylabel("Games")
+    axes[1].set_title("Where the chosen threshold falls on the score distribution", fontsize=11)
+
+    figure.suptitle(
+        f"{flagged.sum()} of {len(scores_1d):,} games flagged at contamination = {contamination:.0%}",
+        fontsize=13, fontweight="semibold", y=1.02,
     )
     figure.tight_layout()
     plt.close(figure)
